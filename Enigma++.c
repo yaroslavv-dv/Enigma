@@ -35,6 +35,54 @@ int main(int argc, char *argv[]) {
     int sub_key[60];
 
     scanf("%s %s", method, procedure);
+
+        if(strcmp(procedure, "brute") == 0) {   //brute-force implementation, trying every seed from 0 to 255, so no key is needed
+        if(strcmp(method, "random") != 0 && strcmp(method, "lcg") != 0) {
+            printf("Brute force only works for random and lcg.\n");
+            return 1;
+        }
+        char cipher[1005];  //the ciphertext in hexadecimal that will to be brute-forced
+        scanf("%s", cipher);
+        int len = strlen(cipher);
+
+        for(int s = 0; s < 256; s++) {  //trying every possible seed
+            if(strcmp(method, "random") == 0) {
+                srand(s);   //starting the generator again with the seed that is tried now
+            } else {
+                lcg_x = s;      
+            }
+
+            char plain[505];    //the decrypted text for this seed that is half small tha the cipher since in decimal
+            int readable = 1;   //stays 1 if every character is a normal printable character
+            for(int i = 0; i < len; i += 2) {   //decrypting the same way as in decrypt, one hex pair at a time
+                char hex_pair[3];
+                hex_pair[0] = cipher[i];
+                hex_pair[1] = cipher[i + 1];
+                hex_pair[2] = '\0';
+                char *end;
+                unsigned char byte = strtol(hex_pair, &end, 16);
+
+                if(strcmp(method, "random") == 0) {
+                    plain[i / 2] = byte ^ next_random();
+                } else {
+                    plain[i / 2] = byte ^ next_lcg();
+                }
+                if(plain[i / 2] < 32 || plain[i / 2] > 126) {   //not a letter, digit, space or symbol, so it is the wrong seed
+                    readable = 0;
+                }
+            }
+            plain[len / 2] = '\0';
+
+            if(readable == 1) {     //only printing the seeds that give normal text
+                printf("seed %d: %s\n", s, plain);
+            }
+        }
+        return 0;
+    }
+
+
+
+
     if(strcmp(method, "random") == 0 || strcmp(method, "lcg") == 0) {
         scanf("%d ", &seed);
         if(seed < 0 || seed > 255) {
@@ -63,7 +111,7 @@ int main(int argc, char *argv[]) {
 /*Encrypting transforms text into hexadecimal because the max range (up to 255) permits comfortable work with pairs of 2 hexadecimal digits.*/
     if(strcmp(procedure, "encrypt") == 0) {
         int c, pos = 0;
-        while((c = getchar()) != '\n') {    //encrypting every number in the input by using XOR with one of the methods
+        while((c = getchar()) != EOF && c != '\n') {    //encrypting every number in the input by using XOR with one of the methods
             if(strcmp(method, "random") == 0) {
                 printf("%02x", (c ^ next_random())); //printing the output of the XOR as hexadecimal pair
             } else if(strcmp(method, "lcg") == 0) {
@@ -74,7 +122,7 @@ int main(int argc, char *argv[]) {
         }
 
     } else {    //if the procedure is decrypting
-/*Decrypting transforms the hex pairs back into unsigned characters and performs the methods backwards.*/
+/*Decrypting transforms the hex pairs back into unsigned characters and performs the methods backwards*/
         int a, b, pos = 0;
         while ((a = getchar()) != EOF && a != '\n') {
             b = getchar();

@@ -1,0 +1,417 @@
+\documentclass[a4paper,10pt]{article}
+\usepackage{a4wide}
+\usepackage[english]{babel}
+\usepackage{listings}
+\usepackage{color}
+\usepackage{url}
+\definecolor{Gray}{gray}{0.95}
+ 
+% This is the list style for displaying C source code:
+\lstdefinestyle{code}{
+    language = C,					% The language of the code snippets
+    basicstyle = \small\ttfamily,	% Font of the text
+    numbers = left,					% Position of the line numbers
+    numberstyle = \footnotesize,	% Style of line numbers
+    frame = tb,				        % Style of surrounding frame
+    framextopmargin=.75mm,         % Space margin top
+    framexbottommargin=.75mm,      % Space margin bottom
+    framexleftmargin=2mm,          % Space margin left
+    framexrightmargin=2mm,         % Space margin right
+    tabsize = 3,					% Size of tab character
+    breaklines = true,             % Wrap lines of code that are too long
+    columns = fullflexible,
+    showstringspaces = false,
+    backgroundcolor = \color{Gray}
+}
+ 
+% This is the list style for displaying input/output. It is different from the style above, since you don't need C keywords to be highlighted in these listings. Line numbers are also emitted in this style.
+\lstdefinestyle{stdio}{
+    basicstyle = \small\ttfamily,	% Font of the text
+    frame = tb,				        % Style of the surrounding frame
+    framextopmargin=.75mm,         % Space margin top
+    framexbottommargin=.75mm,      % Space margin bottom
+    framexleftmargin=2mm,          % Space margin left
+    framexrightmargin=2mm,         % Space margin right
+    tabsize = 3,					% Size of tab character
+    breaklines = true,             % Wrap lines of text that are too long
+    columns = flexible,
+    showstringspaces = false,
+    backgroundcolor = \color{Gray}
+}
+ 
+\title{Enigma++}
+\author{Yaroslav Vasylenko \& Cristian Dima\\
+        S6680933@rug.nl \& S6653693@rug.nl}
+\date{23 October 2026}
+%------------------------------------------------------------%
+% This is where your document starts:
+ 
+\begin{document}
+\maketitle
+ 
+\section{Problem description}
+The program implements the idea of Enigma encoding and decoding procedures. It uses three methods, and all of them combine the text with a pseudorandom keystream by using the exclusive OR (XOR) operation.
+The user gives the method, the procedure (encrypt or decrypt), the key and the text, and the program prints the ciphertext or the plain text.
+For a message of $N$ characters the program generates $N$ pseudorandom bytes from the key and XORs them with the message.
+The three methods only differ in how these bytes are generated: with the {\tt rand()} function of C, with a Linear Congruential Generator or with a Subtractive Generator.
+ 
+The problem was also viewed from a brute-force perspective: if the keys are bytes (1 byte for the first two methods and 55 bytes for the third one), can we decode a message without knowing the key, and how long would that take?
+ 
+\section{Problem analysis}
+Each character of the text is treated as one byte, which is a number from 0 to 255.
+If $P_x$ is the $x$-th byte of the message and $K_x$ is the $x$-th byte of the keystream, then the $x$-th byte of the ciphertext is
+\begin{equation}\label{exprEncrypt}
+C_i = P_i \oplus K_i
+\end{equation}
+where $\oplus$ is XOR. The main idea is that doing XOR with the same byte twice gives back the original byte. So if we XOR the ciphertext with the same keystream, we get the plain text back:
+\begin{equation}\label{exprDecrypt}
+C_x \oplus K_x = P_x \oplus K_x \oplus K_x = P_x
+\end{equation}
+Therefore, this means that encrypting and decrypting is actually the same operation. The only thing that matters is that both sides start the generator with the same key, so that they get exactly the same sequence $K_1, K_2, K_3,...$ and so on.
+ 
+The bytes of the ciphertext can have any value from 0 to 255, also values that are not printable characters (for example a zero byte or a newline). That is why it was decided to print the ciphertext in hexadecimal. Every byte becomes a pair of two hexadecimal digits (from {\tt 00} to {\tt ff}), so the ciphertext is normal text that can be copied and given back to the program to decrypt it.
+ 
+For the keystream three generators were used:
+\begin{itemize}
+\item {\tt random}: the generator that is built into C. {\tt srand(seed)} sets the start of the sequence and every call of {\tt rand() \% 256} gives one byte. The main issue of this method is that different C implementations can have a different {\tt rand()}, so the same seed can give a different keystream on another computer.
+\item {\tt lcg}: the Linear Congruential Generator
+\begin{equation}\label{exprLCG}
+X_n = (a \cdot X_{n-1} + c) \bmod m
+\end{equation}
+Constants being: $a = 1664525$ and $c = 1013904223$ (``Linear Congruential Generator.'' Wikipedia, 13 Sept.\ 2026, 24 Oct.\ 2026). For $m$ we use $2^{32}$. Because $X_n$ is stored in an unsigned int of 32 bits, thus, the result wraps around by itself, so the modulo does not have to be computed. The seed is the first value $X_0$, and the keystream byte is the last byte of $X_n$, so $X_n \bmod 256$.
+\item {\tt sub}: the Subtractive Generator \cite{nr}
+\begin{equation}\label{exprSub}
+X_n = (X_{n-24} - X_{n-55}) \bmod 256
+\end{equation}
+This method requires to remember 55 values of the key instead of 1 as for the previous two. They are stored in the array of 55 elements that is used as a circle. The variable {\tt pos} points to the oldest value, which is $X_{n-55}$. The value $X_{n-24}$ is 24 places back, but because the array is a circle of 55 places, going 24 places back is the same as going 31 places forward ($-24 + 55 = 31$). So $X_{n-24}$ is at position {\tt (pos + 31) \% 55}. After we compute $X_n$ we do not need $X_{n-55}$ anymore, so it is overwritten with the new value and {\tt pos} moves one place further. The result is stored in an {\tt unsigned char}, which takes it modulo 256 automatically, which is also a case with negative number.
+\end{itemize}
+ 
+The brute-force assignment was interpreted as follows: someone has the ciphertext and knows which method was used, but does not know the key. They try every possible key until the decrypted text makes sense. The brute-force concept was applied only for the {\tt random} and {\tt lcg} methods, and not for the {\tt sub} method (in our program this is the procedure {\tt brute}). If the keys are bytes, the {\tt random} and {\tt lcg} methods only have 256 possible keys, which means that trying all of them takes an insignificant amount of time. The {\tt sub} method has 55 bytes of key, so it has
+$$256^{55} = 2^{440} \approx 2.8 \cdot 10^{132}$$
+possible keys. This means that brute-forcing the {\tt sub} method takes $256^{55} / 256 = 256^{54} \approx 1.1 \cdot 10^{130}$ times longer than brute-forcing one of the first two methods. For this reason, an exhaustive search is not feasible for the {\tt sub} method.
+
+ 
+\section{Design}
+First the program reads the method and the procedure with {\tt scanf} and stores them in {\tt method} and {\tt procedure}, respectively. After that the key is read, and how this is done depends on the method.
+For {\tt random} and {\tt lcg} one number is read into {\tt seed}. If it is not between 0 and 255, the program prints an error and stops. Otherwise, for {\tt random} {\tt srand(seed)} is called and for {\tt lcg} the seed is stored in the global variable {\tt lcg\_x}, which always holds the current value of $X_n$.
+For {\tt sub} the program reads 55 numbers into the array {\tt sub\_key}.
+If the method is something else, the program prints an error and stops. After the key, the procedure is checked in the same way.
+ 
+Each generator is a separate function that returns the next byte of the keystream. These functions are {\tt next\_random()}, {\tt next\_lcg()} and {\tt next\_sub()}. The function {\tt next\_sub()} gets the array and a pointer to {\tt pos}, so that it can change both of them and the next call continues from the right place in the circle.
+ 
+When encrypting, a loop reads the text character by character with {\tt getchar()} until the end of the line. Every character is XORed with the next keystream byte, and the result is printed as two hexadecimal digits with {\tt printf("\%02x", ...)}.
+ 
+When decrypting, the loop reads two characters at a time, puts them in the small string {\tt hex\_pair} and converts it back to a number with {\tt strtol(hex\_pair, \&end, 16)}. The result is stored in an {\tt unsigned char}, so it becomes one byte again. This byte is XORed with the next keystream byte and printed with {\tt putchar()}. Because XOR undoes itself (equation (\ref{exprDecrypt})), decrypting uses exactly the same generators as encrypting.
+
+For the brute force, a third procedure {\tt brute} was added to the program. Since no key is needed, it is handled directly after the method and the procedure are read. First the program checks that the method is {\tt random} or {\tt lcg}; for any other method it prints an error and stops. The ciphertext is then read as one string into {\tt cipher} and a loop tries every seed from 0 to 255. For each seed the generator is restarted ({\tt srand(s)} for {\tt random} and {\tt lcg\_x = s} for {\tt lcg}), so that the keystream starts from the beginning, exactly as it would when decrypting with that seed. An inner loop then decrypts the ciphertext one hexadecimal pair at a time, in the same way as the {\tt decrypt} procedure, and stores the result in {\tt plain}. If all decrypted characters are printable meaning, inside the range ASCII 32 to 126, the seed and the text are printed. With a wrong seed the decrypted bytes are effectively random, so they almost never pass this check.
+ 
+\section{Program code}
+\begin{lstlisting}[style = code, title = Enigma++.c]
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+ 
+unsigned int lcg_x;
+ 
+/*          Method 1: the random generator built into C.
+    The srand(seed) must be called in main before calling the funciton */
+unsigned char next_random(void) {
+    return rand() % 256;    //a number from 0 to 255 a.k.a. one byte
+}
+ 
+/* Method 2: Linear Congruential Generator */
+unsigned char next_lcg(void) {
+    /*Xn = (a*X(n-1) + c)*/
+    lcg_x = 1664525 * lcg_x + 1013904223;   //values extracted from the wiki web page
+    return lcg_x % 256;
+}
+ 
+/* Method 3: Subtractive Generator */
+unsigned char next_sub(int sub_key[], int *pos) {
+    /*Xn = (X(n-24) - X(n-55))*/
+    int older = sub_key[*pos];                /* 55 steps ago*/
+    int newer = sub_key[(*pos + 31) % 55];    /* 24 steps ago (you add 31 and loop back 55 steps, so pos + 31 - 55 = pos - 24)*/
+    unsigned char x =(newer - older) % 256;    //computing the next element in the series
+    
+    sub_key[*pos] = x;  //i no longer need the 56th value so i replace it with the one i just calculated for future 
+    *pos = (*pos + 1) % 55; //going to the next element in the series
+    return x;
+}
+ 
+int main(int argc, char *argv[]) {
+    int seed;
+    char method[1005], procedure[1005]; //the size is 1000 in case someone typed a really long unsupported method
+    int sub_key[60];
+ 
+    scanf("%s %s", method, procedure);
+ 
+    if(strcmp(procedure, "brute") == 0) {   //brute-force implementation, trying every seed from 0 to 255, so no key is needed
+        if(strcmp(method, "random") != 0 && strcmp(method, "lcg") != 0) {
+            printf("Brute force only works for random and lcg.\n");
+            return 1;
+        }
+        char cipher[1005];  //the ciphertext in hexadecimal that will to be brute-forced
+        scanf("%s", cipher);
+        int len = strlen(cipher);
+ 
+        for(int s = 0; s < 256; s++) {  //trying every possible seed
+            if(strcmp(method, "random") == 0) {
+                srand(s);   //starting the generator again with the seed that is tried now
+            } else {
+                lcg_x = s;  //same for lcg, the seed is the first element of the series again
+            }
+ 
+            char plain[505];    //the decrypted text for this seed, half the size of the cipher since every byte is 2 hex digits
+            int readable = 1;   //stays 1 if every character is a normal printable character
+            for(int i = 0; i < len; i += 2) {   //decrypting the same way as in decrypt, one hex pair at a time
+                char hex_pair[3];
+                hex_pair[0] = cipher[i];
+                hex_pair[1] = cipher[i + 1];
+                hex_pair[2] = '\0';
+                char *end;
+                unsigned char byte = strtol(hex_pair, &end, 16);
+ 
+                if(strcmp(method, "random") == 0) {
+                    plain[i / 2] = byte ^ next_random();
+                } else {
+                    plain[i / 2] = byte ^ next_lcg();
+                }
+                if(plain[i / 2] < 32 || plain[i / 2] > 126) {   //not a letter, digit, space or symbol, so it is the wrong seed
+                    readable = 0;
+                }
+            }
+            plain[len / 2] = '\0';
+ 
+            if(readable == 1) {     //only printing the seeds that give normal text
+                printf("seed %d: %s\n", s, plain);
+            }
+        }
+        return 0;
+    }
+ 
+    if(strcmp(method, "random") == 0 || strcmp(method, "lcg") == 0) {
+        scanf("%d ", &seed);
+        if(seed < 0 || seed > 255) {
+            printf("Key is invalid, it must be a nr from 0 to 255\n");
+            /* we assume the keys are always bytes, which is 8 bits, aka 256 different values */
+            return 1;
+        }
+        if(strcmp(method, "random") == 0) {
+            srand(seed);    //preparing the seed 'random' values
+        } else {       //when method is "lcg"
+            lcg_x = seed; //in this case, seed is the first element in the recursive series
+        }
+    } else if(strcmp(method, "sub") == 0) {
+        for(int i = 0; i < 55; i++){   //the key must be exactly 55 characters long 
+            scanf("%d", &sub_key[i]);
+        }
+    } else {
+        printf("Unknown method. Use random, lcg, or sub.\n");
+        return 1;
+    }
+ 
+    if(strcmp(procedure, "encrypt") != 0 && strcmp(procedure, "decrypt") != 0) {
+        printf("Unknowm procedure. Use either encrypt or decrypt.\n");
+        return 1;
+    }
+/*Encrypting transforms text into hexadecimal because the max range (up to 255) permits comfortable work with pairs of 2 hexadecimal digits.*/
+    if(strcmp(procedure, "encrypt") == 0) {
+        int c, pos = 0;
+        while((c = getchar()) != EOF && c != '\n') {    //encrypting every number in the input by using XOR with one of the methods
+            if(strcmp(method, "random") == 0) {
+                printf("%02x", (c ^ next_random())); //printing the output of the XOR as hexadecimal pair
+            } else if(strcmp(method, "lcg") == 0) {
+                printf("%02x", (c ^ next_lcg()));
+            } else {
+                printf("%02x", (c ^ next_sub(sub_key, &pos)));
+            }
+        }
+ 
+    } else {    //if the procedure is decrypting
+/*Decrypting transforms the hex pairs back into unsigned characters and performs the methods backwards*/
+        int a, b, pos = 0;
+        while ((a = getchar()) != EOF && a != '\n') {
+            b = getchar();
+ 
+            char hex_pair[3];   //i need an array for the strtol function
+            hex_pair[0] = (char) a; //so i hardcode the current pair into hex_pair[]
+            hex_pair[1] = (char) b;
+            hex_pair[2] = '\0';
+            char *end; //i need an end pointer for the strtol funciton
+            unsigned char byte = strtol(hex_pair, &end, 16); 
+            /* strtol extracts the value of the hex pair and returns a long, which i then convert
+             to a char by storing it into an unsigned char, so it becomes a byte-sized number */
+ 
+            if(strcmp(method, "random") == 0) {
+                putchar(byte ^ next_random());   //decrypting with the XOR operation because it's reversible
+            } else if(strcmp(method, "lcg") == 0) {
+                putchar(byte ^ next_lcg());
+            } else {
+                putchar(byte ^ next_sub(sub_key, &pos));
+            }
+        }
+    }
+    
+    return 0;
+}
+\end{lstlisting}
+ 
+\section{Test results}
+ 
+\begin{itemize}
+ 
+\item Input: (lcg, normal message)
+\begin{lstlisting}[style = stdio]
+lcg encrypt 42
+Hello World
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+c98937922ac0e87d3b7807
+\end{lstlisting}
+ 
+\item Input: (lcg, decrypting with the same seed)
+\begin{lstlisting}[style = stdio]
+lcg decrypt 42
+c98937922ac0e87d3b7807
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Hello World
+\end{lstlisting}
+ 
+\item Input: (random, normal message)
+\begin{lstlisting}[style = stdio]
+random encrypt 42
+Hello World
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+0e015d450ba6baf3a573a6
+\end{lstlisting}
+ 
+\item Input: (random, decrypting with the same seed)
+\begin{lstlisting}[style = stdio]
+random decrypt 42
+0e015d450ba6baf3a573a6
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Hello World
+\end{lstlisting}
+ 
+\item Input: (sub, message on the same line as the key)
+\begin{lstlisting}[style = stdio]
+sub encrypt 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55 Hello World
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+3f577a7373703f48706d737b
+\end{lstlisting}
+ 
+\item Input: (sub, message on a new line)
+\begin{lstlisting}[style = stdio]
+sub encrypt 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35 36 37 38 39 40 41 42 43 44 45 46 47 48 49 50 51 52 53 54 55
+Hello World
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+ 
+\end{lstlisting}
+ 
+\item Input: (seed out of range)
+\begin{lstlisting}[style = stdio]
+lcg encrypt 300
+Hello
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Key is invalid, it must be a nr from 0 to 255
+\end{lstlisting}
+ 
+\item Input: (unknown method)
+\begin{lstlisting}[style = stdio]
+enigma encrypt 42
+Hello
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Unknown method. Use random, lcg, or sub.
+\end{lstlisting}
+ 
+\item Input: (unknown procedure)
+\begin{lstlisting}[style = stdio]
+lcg code 42
+Hello
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Unknowm procedure. Use either encrypt or decrypt.
+\end{lstlisting}
+ 
+\item Input: (input without a newline at the end)
+\begin{lstlisting}[style = stdio]
+printf 'lcg encrypt 42\nHi' | ./enigma
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+c985
+\end{lstlisting}
+ 
+\item Input: (brute force with lcg)
+\begin{lstlisting}[style = stdio]
+lcg brute 6502ff45fce60bd5b19ba28d6cf6f651111518a05ee21ee454df34e022c6
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+seed 173: Meet me at the library at five
+\end{lstlisting}
+ 
+\item Input: (brute force with random)
+\begin{lstlisting}[style = stdio]
+random brute c5f8282810c349056bfbab01bdf5906a1456f1db8b83dbd2c6009aa2aec6
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+seed 173: Meet me at the library at five
+\end{lstlisting}
+ 
+\item Input: (brute force with sub)
+\begin{lstlisting}[style = stdio]
+sub brute 3f577a7373703f48706d737b
+\end{lstlisting}
+ 
+  Output:
+\begin{lstlisting}[style = stdio]
+Brute force only works for random and lcg.
+\end{lstlisting}
+ 
+\end{itemize}
+ 
+\section{Evaluation}
+The {\tt random} and {\tt lcg} methods work as expected: with the same seed the decryption gives back the original message, and with a wrong seed the result is unreadable. The program also detects an unknown method, an unknown procedure and a seed outside the range 0 to 255. Printing the ciphertext in hexadecimal worked well, since the ciphertext can simply be copied and given back to the program.
+ 
+The main issue is the {\tt sub} method, and the problem is in reading the input, not in the generator itself. The 55 numbers are read with \mbox{\tt scanf("\%d", ...)}, so the space or newline after the last number stays in the input. Because of that, the space is encrypted as a part of the message, a message on a new line gives no output, and when decrypting all hexadecimal pairs are shifted by one character. Using \mbox{\tt scanf("\%d ", ...)}, as it is done for the seed, should solve this. In addition, the return value of {\tt scanf} is not checked, so a seed that is not a number is not detected.
+ 
+During testing it was also noticed that the {\tt lcg} keystream repeats itself after 256 bytes. The reason is that only the last byte of $X_n$ is used. Since $m = 2^{32}$, the last 8 bits of $X_n$ depend only on the last 8 bits of $X_{n-1}$, so they can have only 256 different states. Using a higher byte, for example {\tt lcg\_x >> 24}, would avoid this.
+ 
+The brute force shows that the first two methods can be broken easily: measured with {\tt time}, all 256 seeds were tried in about 0.002 seconds, which is about $8 \cdot 10^{-6}$ seconds per key. With the same speed, the $2.8 \cdot 10^{132}$ keys of the {\tt sub} method would take about $2.2 \cdot 10^{127}$ seconds, or around $7 \cdot 10^{119}$ years, while the universe is only about $1.4 \cdot 10^{10}$ years old. Therefore, brute-forcing the {\tt sub} method is not possible in practice. The check for printable characters has one limitation: for very short messages, for example {\tt Hi}, many wrong seeds pass it as well, so it only works reliably for longer messages.
+ 
+\begin{thebibliography}{9}
+\bibitem{nr} W. H. Press, B. P. Flannery, S. A. Teukolsky, and W. T. Vetterling. \emph{Numerical Recipes}. Cambridge University Press, 1986.
+\bibitem{wiki} ``Linear Congruential Generator.'' Wikipedia, 13 Sept.\ 2026, \url{https://en.wikipedia.org/w/index.php?title=Linear_congruential_generator&oldid=1374761067}.
+\end{thebibliography}
+ 
+\end{document}
