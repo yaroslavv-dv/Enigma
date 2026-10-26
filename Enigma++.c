@@ -36,12 +36,12 @@ int main(int argc, char *argv[]) {
 
     scanf("%s %s", method, procedure);
 
-        if(strcmp(procedure, "brute") == 0) {   //brute-force implementation, trying every seed from 0 to 255, so no key is needed
+    if(strcmp(procedure, "brute") == 0) {   //brute-force implementation, trying every seed from 0 to 255, so no key is needed
         if(strcmp(method, "random") != 0 && strcmp(method, "lcg") != 0) {
             printf("Brute force only works for random and lcg.\n");
             return 1;
         }
-        char cipher[1005];  //the ciphertext in hexadecimal that will to be brute-forced
+        char cipher[1005];  //the ciphertext in hexadecimal that will be brute-forced
         scanf("%s", cipher);
         int len = strlen(cipher);
 
@@ -49,10 +49,10 @@ int main(int argc, char *argv[]) {
             if(strcmp(method, "random") == 0) {
                 srand(s);   //starting the generator again with the seed that is tried now
             } else {
-                lcg_x = s;      
+                lcg_x = s;  //same for lcg, the seed is the first element of the series again
             }
 
-            char plain[505];    //the decrypted text for this seed that is half small tha the cipher since in decimal
+            char plain[505];    //the decrypted text for this seed, half the size of the cipher since every byte is 2 hex digits
             int readable = 1;   //stays 1 if every character is a normal printable character
             for(int i = 0; i < len; i += 2) {   //decrypting the same way as in decrypt, one hex pair at a time
                 char hex_pair[3];
@@ -80,9 +80,6 @@ int main(int argc, char *argv[]) {
         return 0;
     }
 
-
-
-
     if(strcmp(method, "random") == 0 || strcmp(method, "lcg") == 0) {
         scanf("%d ", &seed);
         if(seed < 0 || seed > 255) {
@@ -97,7 +94,7 @@ int main(int argc, char *argv[]) {
         }
     } else if(strcmp(method, "sub") == 0) {
         for(int i = 0; i < 55; i++){   //the key must be exactly 55 characters long 
-            scanf("%d", &sub_key[i]);
+            scanf("%d ", &sub_key[i]);
         }
     } else {
         printf("Unknown method. Use random, lcg, or sub.\n");
@@ -105,7 +102,7 @@ int main(int argc, char *argv[]) {
     }
 
     if(strcmp(procedure, "encrypt") != 0 && strcmp(procedure, "decrypt") != 0) {
-        printf("Unknowm procedure. Use either encrypt or decrypt.\n");
+        printf("Unknown procedure. Use either encrypt or decrypt.\n");
         return 1;
     }
 /*Encrypting transforms text into hexadecimal because the max range (up to 255) permits comfortable work with pairs of 2 hexadecimal digits.*/
